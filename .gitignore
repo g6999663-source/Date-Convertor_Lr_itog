@@ -1,5 +1,4 @@
 # Исключить исполняемые файлы
-*.exe
 *.out
 *.app
 
@@ -8,7 +7,6 @@ build/
 bin/
 obj/
 Debug/
-Release/
 x64/
 
 # Исключить файлы IDE
