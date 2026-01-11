@@ -43,3 +43,4 @@ Debug/
 Release/
 x64/
 Release/*.exe
+downloads/*.exe
