@@ -58,8 +58,12 @@
 
 ---
 <img width="574" height="1009" alt="image" src="https://github.com/user-attachments/assets/360d08b0-d143-404f-a888-77112eb125c9" />  
-Дополнительно   
-В docs/Implementation_Plan.md — план реализации проекта  
-В docs/Bench_Report.md — замеры производительности  
+
+  Дополнительно  
+  
+  В docs/Implementation_Plan.md — план реализации проекта  
+  
+  В docs/Bench_Report.md — замеры производительности 
+  
 
 
