@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include <fstream>
 #include <iomanip>
 #include <chrono>
@@ -10,6 +10,7 @@
 #include <numeric>
 #include <cmath>
 #include <sstream>
+#include <random>
 
 using namespace std;
 
@@ -57,6 +58,7 @@ struct DateRecord {
     string mdy;
     bool conv = false;
     bool has_error = false;
+    bool is_correct = true;  // Новое поле для отслеживания корректности
 };
 
 struct BenchmarkResult {
@@ -89,14 +91,13 @@ void printTableHeader() {
 
 void help() {
     printHeader("КОНВЕРТЕР ДАТ");
-    cout << "1) Генерация корректных JSON файлов\n"
-        << "2) Генерация JSON файлов с ошибками\n"
-        << "3) Конвертация ISO->DD.MM.YYYY\n"
-        << "4) Конвертация ISO->MM/DD/YYYY\n"
-        << "5) Анализ файлов\n"
-        << "6) Запуск самотестов\n"
-        << "7) Бенчмарк производительности\n"
-        << "8) Режим отладки\n"
+    cout << "1) Генерация смешанных JSON файлов (корректные + ошибки)\n"
+        << "2) Конвертация ISO->DD.MM.YYYY\n"
+        << "3) Конвертация ISO->MM/DD/YYYY\n"
+        << "4) Анализ файлов\n"
+        << "5) Запуск самотестов\n"
+        << "6) Бенчмарк производительности\n"
+        << "7) Режим отладки\n"
         << "0) Выход из программы\n";
 }
 
@@ -182,97 +183,111 @@ vector<DateRecord> loadDates(const string& fname) {
     return res;
 }
 
-void generateCorrect(int n) {
+void generateMixedFiles(int n, int error_percentage = 30) {
     srand(static_cast<unsigned int>(time(nullptr)));
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution<> error_dist(0, 100);
+    uniform_int_distribution<> error_type_dist(0, 9);
+
+    int correct_files = 0;
+    int error_files = 0;
 
     for (int i = 0; i < n; i++) {
         simple_json::array arr;
-
-        for (int j = 0; j < 10; j++) {
-            int y = 2000 + rand() % 25;
-            int m = 1 + rand() % 12;
-            int d;
-
-            if (m == 2) {
-                bool isLeap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
-                d = 1 + rand() % (isLeap ? 29 : 28);
-            }
-            else if (m == 4 || m == 6 || m == 9 || m == 11) {
-                d = 1 + rand() % 30;
-            }
-            else {
-                d = 1 + rand() % 31;
-            }
-
-            string month_str = (m < 10) ? "0" + to_string(m) : to_string(m);
-            string day_str = (d < 10) ? "0" + to_string(d) : to_string(d);
-
-            string iso = to_string(y) + "-" + month_str + "-" + day_str;
-
-            simple_json::object obj;
-            obj.add("name", "record_" + to_string(i) + "_" + to_string(j));
-            obj.add("date_iso", iso);
-            arr.add(obj);
-        }
-
-        string filename = "data_" + to_string(i) + ".json";
-        ofstream file(filename);
-        if (file) {
-            file << arr.dump();
-            cout << "Создан JSON файл: " << filename << endl;
-        }
-    }
-    cout << "Создано " << n << " корректных JSON файлов\n";
-}
-
-void generateWithErrors(int n) {
-    srand(static_cast<unsigned int>(time(nullptr)));
-
-    for (int i = 0; i < n; i++) {
-        simple_json::array arr;
+        bool file_has_errors = false;
+        int error_count = 0;
+        int correct_count = 0;
 
         for (int j = 0; j < 10; j++) {
             simple_json::object obj;
-            obj.add("name", "error_record_" + to_string(i) + "_" + to_string(j));
-
-            int error_type = rand() % 10;
-
-            if (error_type < 3) {
+            
+            // Решаем, будет ли эта запись с ошибкой
+            bool make_error = (error_dist(gen) < error_percentage);
+            
+            if (make_error) {
+                file_has_errors = true;
+                error_count++;
+                obj.add("name", "error_record_" + to_string(i) + "_" + to_string(j));
+                
+                int error_type = error_type_dist(gen);
                 string bad_date;
-                switch (rand() % 4) {
-                case 0: bad_date = "2024/12/31"; break;
-                case 1: bad_date = "31-12-2024"; break;
-                case 2: bad_date = "2024-13-45"; break;
-                case 3: bad_date = "abcd-ef-gh"; break;
+                
+                switch (error_type % 8) {
+                    case 0: bad_date = "2024/12/31"; break;  // неправильный разделитель
+                    case 1: bad_date = "31-12-2024"; break;  // европейский формат
+                    case 2: bad_date = "2024-13-45"; break;  // несуществующий месяц/день
+                    case 3: bad_date = "abcd-ef-gh"; break;  // некорректные символы
+                    case 4: bad_date = "2024-12"; break;     // неполная дата
+                    case 5: bad_date = ""; break;           // пустая строка
+                    case 6: bad_date = "2024-12-31-extra"; break;  // лишние символы
+                    case 7: 
+                        // пропущенное поле date_iso
+                        obj.add("name", "error_record_" + to_string(i) + "_" + to_string(j));
+                        // не добавляем date_iso
+                        arr.add(obj);
+                        continue;
                 }
-                obj.add("date_iso", bad_date);
-            }
-            else if (error_type < 6) {
-                // Пропущенное поле
-            }
-            else if (error_type < 8) {
-                obj.add("date_iso", "");
-            }
-            else {
-                if (rand() % 2 == 0) {
-                    obj.add("date_iso", "2024-12");
+                
+                if (!bad_date.empty() && error_type != 7) {
+                    obj.add("date_iso", bad_date);
+                }
+            } else {
+                correct_count++;
+                int y = 2000 + rand() % 25;
+                int m = 1 + rand() % 12;
+                int d;
+
+                if (m == 2) {
+                    bool isLeap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+                    d = 1 + rand() % (isLeap ? 29 : 28);
+                }
+                else if (m == 4 || m == 6 || m == 9 || m == 11) {
+                    d = 1 + rand() % 30;
                 }
                 else {
-                    obj.add("date_iso", "2024-12-31-extra");
+                    d = 1 + rand() % 31;
                 }
-            }
 
+                string month_str = (m < 10) ? "0" + to_string(m) : to_string(m);
+                string day_str = (d < 10) ? "0" + to_string(d) : to_string(d);
+
+                string iso = to_string(y) + "-" + month_str + "-" + day_str;
+
+                obj.add("name", "record_" + to_string(i) + "_" + to_string(j));
+                obj.add("date_iso", iso);
+            }
+            
             arr.add(obj);
         }
 
-        string filename = "error_data_" + to_string(i) + ".json";
+        string filename;
+        string file_type;
+        
+        if (file_has_errors) {
+            filename = "mixed_data_" + to_string(i) + ".json";
+            file_type = "СМЕШАННЫЙ (ошибок: " + to_string(error_count) + ")";
+            error_files++;
+        } else {
+            filename = "correct_data_" + to_string(i) + ".json";
+            file_type = "КОРРЕКТНЫЙ";
+            correct_files++;
+        }
+        
         ofstream file(filename);
         if (file) {
             file << arr.dump();
-            cout << "Создан JSON файл с ошибками: " << filename << endl;
+            cout << "Создан " << file_type << " файл: " << filename 
+                 << " (корректных: " << correct_count 
+                 << ", ошибок: " << error_count << ")" << endl;
         }
     }
-    cout << "Создано " << n << " JSON файлов с ошибками\n";
+    
+    cout << "\n=== СВОДКА ГЕНЕРАЦИИ ===\n";
+    cout << "Всего создано файлов: " << n << endl;
+    cout << "Корректных файлов: " << correct_files << endl;
+    cout << "Файлов с ошибками: " << error_files << endl;
+    cout << "Процент ошибок в смешанных файлах: " << error_percentage << "%\n";
 }
 
 void convert(int mode) {
@@ -292,6 +307,7 @@ void convert(int mode) {
     auto start_convert = chrono::high_resolution_clock::now();
     int cnt = 0;
     int errors = 0;
+    int correct_dates = 0;
 
     printHeader("РЕЗУЛЬТАТЫ КОНВЕРТАЦИИ");
 
@@ -305,15 +321,17 @@ void convert(int mode) {
         if (dr.has_error) {
             errors++;
         }
-        else if (mode == 3 && validISO(dr.iso)) {
+        else if (mode == 2 && validISO(dr.iso)) {  // ISO->DD.MM.YYYY
             dr.dmy = iso2dmy(dr.iso);
             cnt++;
             valid_count++;
+            correct_dates++;
         }
-        else if (mode == 4 && validISO(dr.iso)) {
+        else if (mode == 3 && validISO(dr.iso)) {  // ISO->MM/DD/YYYY
             dr.mdy = iso2mdy(dr.iso);
             cnt++;
             valid_count++;
+            correct_dates++;
         }
         else if (!dr.iso.empty()) {
             errors++;
@@ -370,6 +388,7 @@ void convert(int mode) {
 
     cout << "\n=== СВОДКА ===\n";
     cout << left << setw(30) << "Всего записей:" << data.size() << endl;
+    cout << left << setw(30) << "Корректных дат:" << correct_dates << endl;
     cout << left << setw(30) << "Конвертировано:" << cnt << endl;
     cout << left << setw(30) << "Найдено ошибок:" << errors << endl;
     cout << left << setw(30) << "Время загрузки:" << load_time.count() << " мс\n";
@@ -380,22 +399,85 @@ void convert(int mode) {
         double records_per_second = (data.size() * 1000.0) / total_time.count();
         cout << left << setw(30) << "Записей в секунду:" << fixed << setprecision(2) << records_per_second << endl;
     }
+    
+    // Вывод примера конвертации
+    cout << "\n=== ПРИМЕР КОНВЕРТАЦИИ ===\n";
+    int examples_shown = 0;
+    for (const auto& dr : data) {
+        if (examples_shown >= 3) break;
+        if (!dr.iso.empty() && validISO(dr.iso)) {
+            if (mode == 2) {
+                cout << dr.iso << " -> " << iso2dmy(dr.iso) << endl;
+            } else if (mode == 3) {
+                cout << dr.iso << " -> " << iso2mdy(dr.iso) << endl;
+            }
+            examples_shown++;
+        }
+    }
 }
 
 void analyze() {
-    cout << "Сколько файлов? ";
+    cout << "Сколько файлов проанализировать? ";
     int n;
     cin >> n;
 
+    if (n <= 0) return;
+
     int total = 0, valid = 0, errors = 0;
+    int mixed_files = 0, correct_files = 0, error_files = 0;
     vector<long long> processing_times;
 
     for (int i = 0; i < n; i++) {
         auto start = chrono::high_resolution_clock::now();
 
-        string filename = "data_" + to_string(i) + ".json";
-        auto data = loadDates(filename);
+        // Пробуем разные имена файлов
+        string filename;
+        bool file_found = false;
+        
+        // Пробуем mixed_data
+        filename = "mixed_data_" + to_string(i) + ".json";
+        ifstream test1(filename);
+        if (test1.good()) {
+            file_found = true;
+            mixed_files++;
+        }
+        
+        // Пробуем correct_data
+        if (!file_found) {
+            filename = "correct_data_" + to_string(i) + ".json";
+            ifstream test2(filename);
+            if (test2.good()) {
+                file_found = true;
+                correct_files++;
+            }
+        }
+        
+        // Пробуем data_ (старый формат)
+        if (!file_found) {
+            filename = "data_" + to_string(i) + ".json";
+            ifstream test3(filename);
+            if (test3.good()) {
+                file_found = true;
+                correct_files++;
+            }
+        }
+        
+        // Пробуем error_data_ (старый формат)
+        if (!file_found) {
+            filename = "error_data_" + to_string(i) + ".json";
+            ifstream test4(filename);
+            if (test4.good()) {
+                file_found = true;
+                error_files++;
+            }
+        }
 
+        if (!file_found) {
+            cout << "Файл с индексом " << i << " не найден, пропускаем...\n";
+            continue;
+        }
+
+        auto data = loadDates(filename);
         auto end = chrono::high_resolution_clock::now();
         processing_times.push_back(chrono::duration_cast<chrono::milliseconds>(end - start).count());
 
@@ -427,6 +509,9 @@ void analyze() {
 
     cout << "\n=== ДАННЫЕ ===\n";
     cout << left << setw(25) << "Проверено файлов:" << n << endl;
+    cout << left << setw(25) << "Смешанных файлов:" << mixed_files << endl;
+    cout << left << setw(25) << "Корректных файлов:" << correct_files << endl;
+    cout << left << setw(25) << "Файлов с ошибками:" << error_files << endl;
     cout << left << setw(25) << "Всего записей:" << total << endl;
     cout << left << setw(25) << "Корректных дат:" << valid << endl;
     cout << left << setw(25) << "Ошибок:" << errors << endl;
@@ -486,12 +571,13 @@ void runSelfTests() {
         << setw(15) << time3
         << setw(15) << (test3 ? "ПРОЙДЕН" : "НЕ ПРОЙДЕН") << endl;
 
-    // Тест 4: Генерация файлов
+    // Тест 4: Генерация смешанных файлов
     total_tests_run++;
     start = chrono::high_resolution_clock::now();
-    generateCorrect(1);
-    ifstream test_file("data_0.json");
-    bool test4 = test_file.good();
+    generateMixedFiles(1, 30);  // Создаем 1 файл для теста
+    ifstream test_file1("mixed_data_0.json");
+    ifstream test_file2("correct_data_0.json");
+    bool test4 = test_file1.good() || test_file2.good();
     end = chrono::high_resolution_clock::now();
     auto time4 = chrono::duration_cast<chrono::milliseconds>(end - start).count();
 
@@ -516,8 +602,8 @@ void runBenchmark() {
 
     if (n <= 0) return;
 
-    // Создаем тестовые файлы
-    generateCorrect(n);
+    // Создаем тестовые файлы (смешанные)
+    generateMixedFiles(n, 30);  // 30% ошибок
 
     BenchmarkResult result;
     result.records_processed = 0;
@@ -528,9 +614,20 @@ void runBenchmark() {
     auto load_start = chrono::high_resolution_clock::now();
     vector<vector<DateRecord>> all_data;
     for (int i = 0; i < n; i++) {
-        auto data = loadDates("data_" + to_string(i) + ".json");
-        all_data.push_back(data);
-        result.records_processed += data.size();
+        // Пробуем разные имена файлов
+        string filename;
+        
+        filename = "mixed_data_" + to_string(i) + ".json";
+        ifstream test1(filename);
+        if (!test1.good()) {
+            filename = "correct_data_" + to_string(i) + ".json";
+        }
+        
+        auto data = loadDates(filename);
+        if (!data.empty()) {
+            all_data.push_back(data);
+            result.records_processed += data.size();
+        }
     }
     auto load_end = chrono::high_resolution_clock::now();
     result.load_time_ms = chrono::duration_cast<chrono::milliseconds>(load_end - load_start).count();
@@ -552,10 +649,13 @@ void runBenchmark() {
     // Тест валидации
     auto valid_start = chrono::high_resolution_clock::now();
     int valid_count = 0;
+    int error_count = 0;
     for (auto& data : all_data) {
         for (auto& dr : data) {
             if (validISO(dr.iso)) {
                 valid_count++;
+            } else if (!dr.iso.empty()) {
+                error_count++;
             }
         }
     }
@@ -578,6 +678,8 @@ void runBenchmark() {
     cout << "\n=== РЕЗУЛЬТАТЫ БЕНЧМАРКА ===\n";
     cout << left << setw(30) << "Файлов обработано:" << n << endl;
     cout << left << setw(30) << "Записей обработано:" << result.records_processed << endl;
+    cout << left << setw(30) << "Корректных записей:" << valid_count << endl;
+    cout << left << setw(30) << "Записей с ошибками:" << error_count << endl;
     cout << left << setw(30) << "Время загрузки:" << result.load_time_ms << " мс\n";
     cout << left << setw(30) << "Время конвертации:" << result.convert_time_ms << " мс\n";
     cout << left << setw(30) << "Время валидации:" << result.validation_time_ms << " мс\n";
@@ -644,30 +746,31 @@ int main() {
         }
 
         if (choice == 1) {
-            cout << "Сколько корректных файлов создать? ";
+            cout << "Сколько файлов создать? ";
             int n;
             cin >> n;
-            if (n > 0) generateCorrect(n);
+            if (n > 0) {
+                cout << "Процент ошибок в файлах (0-100): ";
+                int error_percent;
+                cin >> error_percent;
+                if (error_percent < 0) error_percent = 0;
+                if (error_percent > 100) error_percent = 100;
+                generateMixedFiles(n, error_percent);
+            }
         }
-        else if (choice == 2) {
-            cout << "Сколько файлов с ошибками создать? ";
-            int n;
-            cin >> n;
-            if (n > 0) generateWithErrors(n);
-        }
-        else if (choice == 3 || choice == 4) {
+        else if (choice == 2 || choice == 3) {
             convert(choice);
         }
-        else if (choice == 5) {
+        else if (choice == 4) {
             analyze();
         }
-        else if (choice == 6) {
+        else if (choice == 5) {
             runSelfTests();
         }
-        else if (choice == 7) {
+        else if (choice == 6) {
             runBenchmark();
         }
-        else if (choice == 8) {
+        else if (choice == 7) {
             debugMode();
         }
         else if (choice == 0) {
