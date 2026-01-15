@@ -80,7 +80,7 @@ ISO 8601: YYYY-MM-DD, YYYY/MM/DD
 
 ## 4. Интерфейсы функций и примеры использования
 // Основные интерфейсы
-
+```json
 json readJsonFile(const std::string& filename);
 std::vector<ParsedDate> parseDates(const json& data);
 ValidationResult validateDates(const std::vector<ParsedDate>& dates);
@@ -88,6 +88,7 @@ ConversionResult convertDates(const ValidationResult& validDates,
                               OutputFormat format);
 void generateReport(const ConversionResult& result, 
                     const std::string& outputFile);
+```
 Пример использования:
 
 cpp
