@@ -10,7 +10,7 @@
 #include <numeric>
 #include <cmath>
 #include <sstream>
-#include <random>
+#include <clocale>
 
 using namespace std;
 
@@ -46,13 +46,16 @@ namespace simple_json {
 
 struct DateRecord {
     string name, iso, dmy, mdy;
-    bool has_error = false;
+    bool has_error;
+    DateRecord() : has_error(false) {}
 };
 
 struct BenchmarkResult {
     int records_processed;
     long long load_time_ms, convert_time_ms, validation_time_ms, total_time_ms;
     double records_per_second;
+    BenchmarkResult() : records_processed(0), load_time_ms(0), convert_time_ms(0),
+                        validation_time_ms(0), total_time_ms(0), records_per_second(0.0) {}
 };
 
 vector<BenchmarkResult> benchmark_results;
@@ -92,7 +95,6 @@ bool validISO(const string& s) {
             bool leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
             if (d > (leap ? 29 : 28)) return false;
         }
-
         return true;
     }
     catch (...) {
@@ -108,17 +110,19 @@ string iso2mdy(const string& i) {
     return i.substr(5,2) + "/" + i.substr(8,2) + "/" + i.substr(0,4);
 }
 
-// 🔧 Исправленный парсер
 vector<DateRecord> loadDates(const string& fname) {
     vector<DateRecord> res;
-    ifstream f(fname);
+    ifstream f(fname.c_str());
     if (!f.is_open()) return res;
 
-    string content((istreambuf_iterator<char>(f)),
-                    istreambuf_iterator<char>());
+    string content;
+    char ch;
+    while (f.get(ch)) {
+        content += ch;
+    }
+    f.close();
 
     size_t pos = 0;
-
     while ((pos = content.find("{", pos)) != string::npos) {
         size_t end = content.find("}", pos);
         if (end == string::npos) break;
@@ -142,20 +146,17 @@ vector<DateRecord> loadDates(const string& fname) {
                 dr.iso = obj.substr(date_pos, date_end - date_pos);
         }
 
-        dr.has_error = dr.name.empty() || dr.iso.empty();
+        dr.has_error = dr.name.empty() || dr.
+            iso.empty();
         res.push_back(dr);
 
         pos = end + 1;
     }
-
     return res;
 }
 
 void generateMixedFiles(int n, int err_pct = 30) {
-    srand((unsigned)time(nullptr));
-random_device rd;
-    mt19937 gen(rd());
-    uniform_int_distribution<> err_dist(0, 100);
+    srand((unsigned)time(NULL));
 
     for (int i = 0; i < n; ++i) {
         simple_json::array arr;
@@ -163,15 +164,14 @@ random_device rd;
 
         for (int j = 0; j < 10; ++j) {
             simple_json::object obj;
-            bool make_err = err_dist(gen) < err_pct;
+            bool make_err = (rand() % 100) < err_pct;
 
             obj.add("name", "record_" + to_string(i) + "_" + to_string(j));
 
             if (make_err) {
                 has_errors = true;
                 obj.add("date_iso", "2024-99-99");
-            }
-            else {
+            } else {
                 int y = 2000 + rand() % 25;
                 int m = 1 + rand() % 12;
                 int d = 1 + rand() % 28;
@@ -185,24 +185,24 @@ random_device rd;
             arr.add(obj);
         }
 
-        string fname = (has_errors ? "mixed_data_" : "correct_data_")
-                        + to_string(i) + ".json";
-
-        ofstream file(fname);
-        if (file) file << arr.dump();
+        string fname = (has_errors ? "mixed_data_" : "correct_data_") + to_string(i) + ".json";
+        ofstream file(fname.c_str());
+        if (file.is_open()) {
+            file << arr.dump();
+            file.close();
+        }
 
         cout << "Создан файл: " << fname << "\n";
     }
 }
 
-// 🔧 Исправленная конвертация
 void convert(int mode) {
     cout << "Имя файла: ";
     string fname;
     cin >> fname;
 
     auto start_load = chrono::high_resolution_clock::now();
-    auto data = loadDates(fname);
+    vector<DateRecord> data = loadDates(fname);
     auto end_load = chrono::high_resolution_clock::now();
 
     if (data.empty()) {
@@ -217,7 +217,8 @@ void convert(int mode) {
 
     printHeader("РЕЗУЛЬТАТЫ КОНВЕРТАЦИИ");
 
-    for (auto& dr : data) {
+    for (size_t i = 0; i < data.size(); ++i) {
+        DateRecord& dr = data[i];
 
         if (dr.has_error) {
             cout << "[ОШИБКА] Некорректная запись\n";
@@ -234,8 +235,7 @@ void convert(int mode) {
         if (mode == 2) {
             dr.dmy = iso2dmy(dr.iso);
             cout << dr.iso << " -> " << dr.dmy << "\n";
-        }
-        else {
+        } else {
             dr.mdy = iso2mdy(dr.iso);
             cout << dr.iso << " -> " << dr.mdy << "\n";
         }
@@ -273,11 +273,12 @@ int main() {
             cin >> p;
             generateMixedFiles(n, p);
         }
-        else if (c == 2 || c == 3)
+        else if (c == 2 || c == 3) {
             convert(c);
-        else if (c == 0)
+        }
+        else if (c == 0) {
             break;
+        }
     }
-
     return 0;
 }
